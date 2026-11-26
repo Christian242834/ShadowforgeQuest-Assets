@@ -47,14 +47,14 @@
 
   // SpriteKit source geometry mirrored from MainView.swift:
   // base artwork is 1284×1674 at 3 px per point; vortex position (4,205),
-  // equal x/y scale 0.76, no slant, 14s rotation, shimmer counter-rotates in 10.5s.
+  // equal x/y scale 0.90, no slant, 14s rotation, shimmer counter-rotates in 10.5s.
   const baseW = W / DPR, baseH = H / DPR;
   const centerX = W * 0.5 + 4 * DPR;
-  const centerY = H - 205 * DPR;
+  const centerY = H - 270 * DPR;\n  const maskCenterY = H - 205 * DPR;
   const doorW = baseW * 0.34;
   const doorH = baseH * 0.48;
-  const scale = 0.76;
-  const diameter = Math.max(doorH / scale, doorW / scale) * 1.06 * scale * DPR;
+  const scale = 0.90;
+  const diameter = Math.max(doorH, doorW) * 1.06 * (scale / 0.76) * DPR;
   const radius = diameter * 0.5;
   const inset = 5 * DPR;
 
@@ -64,11 +64,11 @@
   const halfW = doorW * 0.5 * DPR + inset;
   const bottomY = doorH * 0.5 * DPR + inset;
   const archTopY = (doorH * 0.5 + 5) * DPR;
-  archMask.moveTo(centerX - halfW, centerY + bottomY);
-  archMask.lineTo(centerX - halfW, centerY);
-  archMask.quadraticCurveTo(centerX, centerY - archTopY * 2,
-                            centerX + halfW, centerY);
-  archMask.lineTo(centerX + halfW, centerY + bottomY);
+  archMask.moveTo(centerX - halfW, maskCenterY + bottomY);
+  archMask.lineTo(centerX - halfW, maskCenterY);
+  archMask.quadraticCurveTo(centerX, maskCenterY - archTopY * 2,
+                            centerX + halfW, maskCenterY);
+  archMask.lineTo(centerX + halfW, maskCenterY + bottomY);
   archMask.closePath();
 
   // Procedural texture uses the same multi-arm logarithmic spiral equations
@@ -136,7 +136,7 @@
     ctx.save();
     ctx.clip(archMask);
 
-    // The SpriteKit circular source is scaled equally on both axes (0.76).
+    // The SpriteKit circular source is scaled equally on both axes (0.90).
     // The outer glow and all spiral layers share this same circular bounding box.
     ctx.save();
     ctx.translate(centerX, centerY);
