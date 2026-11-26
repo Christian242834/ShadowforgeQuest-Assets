@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<title>Shadowforge Quest — Rift Portal Preview</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 100%; min-height: 100%; background: #090611; }
+  body { display: grid; place-items: center; min-height: 100svh; overflow: hidden; }
+  #stage {
+    position: relative;
+    width: min(100vw, calc(100svh * 1284 / 1674));
+    aspect-ratio: 1284 / 1674;
+    overflow: hidden;
+    background: #08040e;
+    isolation: isolate;
+  }
+  #vortex, #arch {
+    position: absolute; inset: 0;
+    display: block; width: 100%; height: 100%;
+  }
+  #vortex { z-index: 1; }
+  #arch { z-index: 2; object-fit: fill; pointer-events: none; }
+  #status {
+    position: fixed; left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom));
+    color: #d9c8ff; background: #160d24dd; border: 1px solid #7954a866;
+    border-radius: 8px; padding: 7px 10px; font: 12px/1.35 system-ui, sans-serif;
+    text-align: center; z-index: 5;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="vortex" width="1284" height="1674" aria-label="Animated Rift vortex"></canvas>
+  <img id="arch" src="rift_portal_base.png" alt="Rift of Legends stone archway"
+       onerror="if(!this.dataset.fallback){this.dataset.fallback='1';this.src='IMG_7072.png';}else{document.getElementById('status').textContent='Missing arch artwork: add rift_portal_base.png to this repository root.';}">
+</div>
+<div id="status">Rift preview • 1:1 circular vortex • 14s rotation</div>
+<script>
+(() => {
+  'use strict';
+  const W = 1284, H = 1674, DPR = 3;
+  const canvas = document.getElementById('vortex');
+  const ctx = canvas.getContext('2d', { alpha: true });
+  const status = document.getElementById('status');
+
+  // SpriteKit source geometry mirrored from MainView.swift:
+  // base artwork is 1284×1674 at 3 px per point; vortex position (4,205),
+  // equal x/y scale 0.76, no slant, 14s rotation, shimmer counter-rotates in 10.5s.
+  const baseW = W / DPR, baseH = H / DPR;
+  const centerX = W * 0.5 + 4 * DPR;
+  const centerY = H - 205 * DPR;
+  const doorW = baseW * 0.34;
+  const doorH = baseH * 0.48;
+  const scale = 0.76;
+  const diameter = Math.max(doorH / scale, doorW / scale) * 1.06 * scale * DPR;
+  const radius = diameter * 0.5;
+  const inset = 5 * DPR;
+
+  // Same arched crop geometry as the SpriteKit SKCropNode mask.
+  // The mask is intentionally inset only 5 points beneath the stone frame.
+  const archMask = new Path2D();
+  const halfW = doorW * 0.5 * DPR + inset;
+  const bottomY = doorH * 0.5 * DPR + inset;
+  const archTopY = (doorH * 0.5 + 5) * DPR;
+  archMask.moveTo(centerX - halfW, centerY + bottomY);
+  archMask.lineTo(centerX - halfW, centerY);
+  archMask.quadraticCurveTo(centerX, centerY - archTopY * 2,
+                            centerX + halfW, centerY);
+  archMask.lineTo(centerX + halfW, centerY + bottomY);
+  archMask.closePath();
+
+  // Procedural texture uses the same multi-arm logarithmic spiral equations
+  // and deep radial core as the SpriteKit shader. Textures remain perfectly square.
+  function makeEnergyTexture(size, mode) {
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const g = c.getContext('2d');
+    const pixels = g.createImageData(size, size);
+    const data = pixels.data;
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const px = (x + 0.5) / size * 2 - 1;
+        const py = (y + 0.5) / size * 2 - 1;
+        const r = Math.hypot(px, py);
+        const a = Math.atan2(py, px);
+        const i = (y * size + x) * 4;
+        if (r > 1.04) continue;
+        if (mode === 'spiral') {
+          const phase = a * 7 + Math.log(Math.max(r, 0.018)) * 5.4;
+          const arm = Math.pow(Math.max(0, 0.5 + 0.5 * Math.cos(phase)), 10);
+          const filament = Math.pow(Math.max(0, 0.5 + 0.5 * Math.cos(phase + 0.72)), 22);
+          const edge = 1 - smoothstep(0.91, 1.04, r);
+          const core = Math.exp(-r * 8.5);
+          const energy = (arm * 0.62 + filament * 0.38 + core * 0.34) * edge;
+          const t = clamp(filament + core * 0.45, 0, 1);
+          data[i] = 143 + 66 * t;
+          data[i + 1] = 51 + 94 * t;
+          data[i + 2] = 255;
+          data[i + 3] = Math.round(energy * 255);
+        } else if (mode === 'shimmer') {
+          const phase = a * 5 - Math.log(Math.max(r, 0.025)) * 4.2;
+          const ribbon = Math.pow(Math.max(0, 0.5 + 0.5 * Math.cos(phase)), 14);
+          const innerGlow = Math.exp(-r * 5.8);
+          const alpha = (ribbon * 0.48 + innerGlow * 0.20) *
+                        (1 - smoothstep(0.78, 1, r));
+          data[i] = 194; data[i + 1] = 122; data[i + 2] = 255;
+          data[i + 3] = Math.round(alpha * 255);
+        } else {
+          const core = Math.exp(-r * 11);
+          const edge = 1 - smoothstep(0.94, 1, r);
+          data[i] = 51 + 33 * core;
+          data[i + 1] = 9 + 12 * core;
+          data[i + 2] = 112 + 86 * core;
+          data[i + 3] = Math.round(edge * 238);
+        }
+      }
+    }
+    g.putImageData(pixels, 0, 0);
+    return c;
+  }
+  function smoothstep(a, b, x) {
+    const t = clamp((x - a) / (b - a), 0, 1);
+    return t * t * (3 - 2 * t);
+  }
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  const energy = makeEnergyTexture(640, 'energy');
+  const spiral = makeEnergyTexture(640, 'spiral');
+  const shimmer = makeEnergyTexture(640, 'shimmer');
+
+  function draw(time) {
+    const seconds = time / 1000;
+    ctx.clearRect(0, 0, W, H);
+    ctx.save();
+    ctx.clip(archMask);
+
+    // The SpriteKit circular source is scaled equally on both axes (0.76).
+    // The outer glow and all spiral layers share this same circular bounding box.
+    ctx.save();
+    ctx.translate(centerX, centerY);
+    ctx.globalCompositeOperation = 'source-over';
+    const radial = ctx.createRadialGradient(0, 0, radius * 0.025, 0, 0, radius);
+    radial.addColorStop(0, 'rgba(104,45,194,0.96)');
+    radial.addColorStop(0.22, 'rgba(55,15,116,0.94)');
+    radial.addColorStop(0.72, 'rgba(29,7,66,0.78)');
+    radial.addColorStop(0.94, 'rgba(85,28,160,0.48)');
+    radial.addColorStop(1, 'rgba(120,65,205,0)');
+    ctx.fillStyle = radial;
+    ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill();
+
+    // Main vortex rotation: one complete clockwise cycle every 14 seconds.
+    ctx.save();
+    ctx.rotate(-seconds * Math.PI * 2 / 14);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.72;
+    ctx.drawImage(spiral, -radius, -radius, diameter, diameter);
+    ctx.restore();
+
+    // Inner shimmer counter-rotates, matching the 10.5-second SpriteKit action.
+    ctx.save();
+    ctx.rotate(seconds * Math.PI * 2 / 10.5);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.45;
+    const innerD = diameter * 0.68;
+    ctx.drawImage(shimmer, -innerD / 2, -innerD / 2, innerD, innerD);
+    ctx.restore();
+
+    // Soft circular outer glow remains radial and never forms diamond corners.
+    ctx.globalCompositeOperation = 'lighter';
+    const glow = ctx.createRadialGradient(0, 0, radius * 0.68, 0, 0, radius * 1.08);
+    glow.addColorStop(0, 'rgba(137,67,255,0)');
+    glow.addColorStop(0.78, 'rgba(137,67,255,0.10)');
+    glow.addColorStop(1, 'rgba(137,67,255,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(0, 0, radius * 1.08, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+
+    ctx.restore();
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+  status.textContent = 'Rift preview • 1:1 circular vortex • 14s rotation • counter-rotating shimmer';
+})();
+</script>
+</body>
+</html>
